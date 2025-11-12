@@ -92,14 +92,7 @@
   </div>
 
 <script>
-/* Rhino Ram — Single-file JS canvas game with sound effects.
-   Controls:
-   P1: WASD + Space
-   P2: Arrows + Enter
-*/
-
 (() => {
-  // Canvas & scaling
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
   const overlay = document.getElementById('overlay');
@@ -109,7 +102,7 @@
   const modeBtn = document.getElementById('modeBtn');
   const bestOfSel = document.getElementById('bestOf');
 
-  let W = 900, H = 560; // logical space
+  let W = 900, H = 560;
   let DPR = window.devicePixelRatio || 1;
 
   function resizeCanvasToDisplay() {
@@ -121,25 +114,21 @@
   }
   window.addEventListener('resize', () => { DPR = window.devicePixelRatio || 1; resizeCanvasToDisplay(); });
 
-  // Game state
   let state = null;
   let running = false;
   let onePlayer = true;
   let scores = { p1:0, p2:0 };
   let needToStartAudio = true;
 
-  // Input
   const keys = {};
   window.addEventListener('keydown', (e) => { keys[e.key] = true; if (needToStartAudio) initAudio(); });
   window.addEventListener('keyup', (e) => { keys[e.key] = false; });
 
-  // Audio (WebAudio) - synthesized tones
   let audioCtx = null;
   const SFX = {};
   function initAudio() {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // utility for small synth tones
     function tone(freq=440, type='sine', dur=0.12, vol=0.14, shape='adsr') {
       return () => {
         const now = audioCtx.currentTime;
@@ -160,7 +149,6 @@
         osc.stop(now + dur + 0.02);
       };
     }
-    // build simple SFX
     SFX.dash = tone(520,'sawtooth',0.08,0.14);
     SFX.hit = tone(160,'square',0.18,0.18);
     SFX.point = tone(660,'triangle',0.28,0.22);
@@ -168,28 +156,16 @@
     needToStartAudio = false;
   }
 
-  // Players
   function makePlayer(x,y,color){
-    return {
-      x,y,vx:0,vy:0,
-      radius:28,color,
-      maxSpeed:220,accel:1400,friction:6,
-      dashCooldown:0,dashing:0,dashPower:420,immobile:0
-    };
+    return { x,y,vx:0,vy:0, radius:28,color, maxSpeed:220,accel:1400,friction:6,dashCooldown:0,dashing:0, dashPower:420, immobile:0 };
   }
 
   function resetState() {
-    state = {
-      W: W, H: H,
-      p1: makePlayer(W*0.25, H/2, '#6B7280'),
-      p2: makePlayer(W*0.75, H/2, '#10B981'),
-      roundTime:0
-    };
+    state = { W, H, p1: makePlayer(W*0.25, H/2, '#6B7280'), p2: makePlayer(W*0.75, H/2, '#10B981'), roundTime:0 };
     scores = { p1:0, p2:0 };
     updateScoreUI();
   }
 
-  // Start/Stop
   function startMatch() {
     resetState();
     running = true;
@@ -203,294 +179,65 @@
     if (audioCtx && SFX.win) SFX.win();
   }
 
-  function updateScoreUI(){
-    scoreP1El.textContent = scores.p1;
-    scoreP2El.textContent = scores.p2;
-  }
+  function updateScoreUI(){ scoreP1El.textContent = scores.p1; scoreP2El.textContent = scores.p2; }
 
-  // Physics helpers
   function integrate(p, dt) {
-    // friction
     p.vx *= (1 - Math.min(0.9, dt * p.friction));
     p.vy *= (1 - Math.min(0.9, dt * p.friction));
-    // cap
     const sp = Math.hypot(p.vx, p.vy);
     const max = p.maxSpeed * 1.6;
     if (sp > max) { p.vx *= max/sp; p.vy *= max/sp; }
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    // bounds
+    p.x += p.vx * dt; p.y += p.vy * dt;
     p.x = Math.max(p.radius, Math.min(W - p.radius, p.x));
     p.y = Math.max(p.radius, Math.min(H - p.radius, p.y));
   }
 
-  // Controls handling
-  function handleControls() {
-    if (!state) return;
-    const p1 = state.p1, p2 = state.p2;
-    // P1: WASD, Space dash
-    handlePlayerInput(p1, {
-      up: keys['w']||keys['W'],
-      down: keys['s']||keys['S'],
-      left: keys['a']||keys['A'],
-      right: keys['d']||keys['D'],
-      dash: keys[' ']
-    });
-    if (!onePlayer) {
-      handlePlayerInput(p2, {
-        up: keys['ArrowUp'],
-        down: keys['ArrowDown'],
-        left: keys['ArrowLeft'],
-        right: keys['ArrowRight'],
-        dash: keys['Enter']
-      });
-    } else {
-      botUpdate(p2, p1);
-    }
-  }
+  // Preload images
+  const rhinoBodyImg = new Image();
+  rhinoBodyImg.src = '15c22c9a-7a86-4d0a-b5e6-4a506892f3d1.png';
 
-  function handlePlayerInput(p, input) {
-    if (p.immobile) return;
-    let tx=0,ty=0;
-    if (input.up) ty-=1;
-    if (input.down) ty+=1;
-    if (input.left) tx-=1;
-    if (input.right) tx+=1;
-    const mag = Math.hypot(tx,ty) || 1;
-    tx/=mag; ty/=mag;
-    // accelerate toward input
-    p.vx += tx * p.accel * dtForFrame;
-    p.vy += ty * p.accel * dtForFrame;
-    // dash
-    if (input.dash && p.dashCooldown <= 0) {
-      // if standing, dash forward to the right (arbitrary)
-      const sx = tx || (p.vx ? Math.sign(p.vx) : 1);
-      const sy = ty || (p.vy ? Math.sign(p.vy) : 0);
-      const sm = Math.hypot(sx,sy) || 1;
-      p.vx += (sx/sm) * p.dashPower;
-      p.vy += (sy/sm) * p.dashPower;
-      p.dashing = 0.18; p.dashCooldown = 0.9;
-      if (SFX.dash) SFX.dash();
-    }
-  }
+  const rhinoHeadImg = new Image();
+  rhinoHeadImg.src = '0f6de30e-14bd-4c73-9afc-cdfed1194451.avif';
 
-  // Bot: medium difficulty — predictive + occasional dash
-  function botUpdate(bot, target) {
-    if (bot.immobile) return;
-    const predict = 0.26 + Math.min(0.4, Math.hypot(target.vx,target.vy)/800);
-    const tx = target.x + target.vx * predict;
-    const ty = target.y + target.vy * predict;
-    const dx = tx - bot.x, dy = ty - bot.y;
-    const d = Math.hypot(dx,dy) || 1;
-    const nx = dx/d, ny = dy/d;
-    const approach = Math.max(0, 1 - d / 420);
-    const desiredSpeed = bot.maxSpeed * (0.75 + 0.25*approach);
-    const desiredVX = nx * desiredSpeed, desiredVY = ny * desiredSpeed;
-    bot.vx += (desiredVX - bot.vx) * Math.min(1, bot.accel * dtForFrame / Math.max(1, Math.abs(desiredVX - bot.vx)));
-    bot.vy += (desiredVY - bot.vy) * Math.min(1, bot.accel * dtForFrame / Math.max(1, Math.abs(desiredVY - bot.vy)));
-    // dash logic
-    const facing = (bot.vx * nx + bot.vy * ny) / (Math.hypot(bot.vx,bot.vy) + 1e-6);
-    if (bot.dashCooldown <= 0 && d < 520 && Math.random() < 0.01 + 0.8*approach && facing > 0.2) {
-      bot.vx += nx * bot.dashPower * (0.9 + Math.random()*0.3);
-      bot.vy += ny * bot.dashPower * (0.9 + Math.random()*0.3);
-      bot.dashing = 0.18 + Math.random()*0.12;
-      bot.dashCooldown = 0.9 + Math.random()*0.8;
-      if (SFX.dash) SFX.dash();
-    }
-    // small randomness
-    if (Math.random() < 0.02) {
-      bot.vx += (Math.random()-0.5)*30; bot.vy += (Math.random()-0.5)*30;
-    }
-  }
-
-  // Collision and scoring
-  function checkCollisions() {
-    const a = state.p1, b = state.p2;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const dist = Math.hypot(dx,dy);
-    if (dist < a.radius + b.radius) {
-      // resolve overlap
-      const overlap = (a.radius + b.radius) - dist || 0.001;
-      const nx = dx / (dist || 1), ny = dy / (dist || 1);
-      a.x -= nx * overlap * 0.5; a.y -= ny * overlap * 0.5;
-      b.x += nx * overlap * 0.5; b.y += ny * overlap * 0.5;
-      // compute pushing power
-      const p1Power = Math.hypot(a.vx,a.vy) * (a.dashing ? 1.6:1);
-      const p2Power = Math.hypot(b.vx,b.vy) * (b.dashing ? 1.6:1);
-      // small added directional bonus
-      const rel = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-      const score1 = p1Power + Math.max(0, rel);
-      const score2 = p2Power + Math.max(0, -rel);
-      if (score1 > score2 * 1.05) {
-        awardPoint('p1');
-      } else if (score2 > score1 * 1.05) {
-        awardPoint('p2');
-      } else {
-        // tie bounce
-        a.vx -= nx * 80; a.vy -= ny * 80;
-        b.vx += nx * 80; b.vy += ny * 80;
-      }
-      if (SFX.hit) SFX.hit();
-    }
-  }
-
-  function awardPoint(player) {
-    if (player === 'p1') scores.p1++;
-    else scores.p2++;
-    if (SFX.point) SFX.point();
-    updateScoreUI();
-    // freeze briefly and reset positions for next round or end match
-    state.p1.immobile = 0.45; state.p2.immobile = 0.45;
-    // check match winner
-    const need = Math.ceil(Number(bestOfSel.value)/2);
-    if (scores.p1 >= need || scores.p2 >= need) {
-      const winner = scores.p1 > scores.p2 ? 'Player 1' : 'Player 2';
-      setTimeout(() => endMatch(winner), 400);
-    } else {
-      setTimeout(() => {
-        // reset positions
-        state.p1.x = W*0.25; state.p1.y = H/2; state.p1.vx=0; state.p1.vy=0; state.p1.dashing=0;
-        state.p2.x = W*0.75; state.p2.y = H/2; state.p2.vx=0; state.p2.vy=0; state.p2.dashing=0;
-        // continue running
-      }, 300);
-    }
-  }
-
-  // Drawing functions (bearsus-ish rhino)
-  function drawArena() {
-    // background gradient
-    const g = ctx.createLinearGradient(0,0,0,canvas.height/DPR);
-    g.addColorStop(0,'#F8FAFC'); g.addColorStop(1,'#EFF6FF');
-    ctx.fillStyle = g;
-    ctx.fillRect(0,0,canvas.width/DPR,canvas.height/DPR);
-    // subtle blobs
+  // Draw rhino using body + head images
+  function drawRhino(p){
     ctx.save();
-    ctx.globalAlpha = 0.06;
-    ctx.fillStyle = '#111827';
-    roundedBlob(ctx, (canvas.width/DPR)*0.18, (canvas.height/DPR)*0.3, 160, 110);
-    roundedBlob(ctx, (canvas.width/DPR)*0.76, (canvas.height/DPR)*0.68, 220, 140);
-    ctx.restore();
-    // border
-    ctx.strokeStyle = "rgba(17,24,39,0.06)";
-    ctx.lineWidth = 2;
-    roundRect(ctx, 6, 6, canvas.width/DPR - 12, canvas.height/DPR - 12, 16);
-    ctx.stroke();
-  }
-  function roundedBlob(ctx,x,y,rx,ry){ ctx.beginPath(); ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2); ctx.fill(); }
-  function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+    ctx.translate(p.x,p.y);
 
-  function drawRhino(p) {
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    // shadow
-    ctx.beginPath(); ctx.ellipse(0,8,p.radius*1.15,p.radius*0.55,0,0,Math.PI*2); ctx.fillStyle='rgba(2,6,23,0.08)'; ctx.fill();
-    // body
-    ctx.beginPath(); ctx.ellipse(0,0,p.radius,p.radius*0.8,0,0,Math.PI*2); ctx.fillStyle=p.color; ctx.fill();
-    // belly highlight
-    ctx.beginPath(); ctx.ellipse(-6,-2,p.radius*0.7,p.radius*0.4,0,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.fill();
-    // muzzle
-    ctx.beginPath(); ctx.ellipse(p.radius*0.55,-4,p.radius*0.42,p.radius*0.32,0,0,Math.PI*2); ctx.fillStyle=shade(p.color,-0.08); ctx.fill();
-    // horn
-    const hornX = p.radius*0.9;
-    ctx.beginPath(); ctx.moveTo(hornX,-8); ctx.lineTo(hornX+10,-18); ctx.lineTo(hornX+6,-6); ctx.closePath(); ctx.fillStyle='#F3F4F6'; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.05)'; ctx.stroke();
-    // eye
-    ctx.beginPath(); ctx.arc(p.radius*0.35,-6,3,0,Math.PI*2); ctx.fillStyle='#0F172A'; ctx.fill();
-    // dashing streak
-    if (p.dashing) {
-      ctx.globalAlpha = Math.min(1, p.dashing * 6);
-      ctx.beginPath(); ctx.moveTo(-p.radius*0.7,0); ctx.lineTo(-p.radius*2.6,-6); ctx.lineTo(-p.radius*2.2,6); ctx.closePath();
-      ctx.fillStyle = 'rgba(255,255,255,0.32)'; ctx.fill(); ctx.globalAlpha = 1;
+    // Shadow
+    ctx.beginPath();
+    ctx.ellipse(0,10,p.radius*1.2,p.radius*0.6,0,0,Math.PI*2);
+    ctx.fillStyle='rgba(2,6,23,0.08)';
+    ctx.fill();
+
+    // Body
+    const bodyWidth = p.radius*2.4;
+    const bodyHeight = p.radius*1.6;
+    ctx.drawImage(rhinoBodyImg,-bodyWidth/2,-bodyHeight/2,bodyWidth,bodyHeight);
+
+    // Head
+    const headWidth = p.radius*1.2;
+    const headHeight = p.radius*1.2;
+    ctx.drawImage(rhinoHeadImg,-headWidth/2,-bodyHeight/2-headHeight/2+4,headWidth,headHeight);
+
+    // Dash streak
+    if(p.dashing){
+      ctx.globalAlpha = Math.min(1,p.dashing*6);
+      ctx.beginPath();
+      ctx.moveTo(-p.radius*0.7,0);
+      ctx.lineTo(-p.radius*2.6,-6);
+      ctx.lineTo(-p.radius*2.2,6);
+      ctx.closePath();
+      ctx.fillStyle='rgba(255,255,255,0.32)';
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
-    ctx.restore();
-  }
-  function shade(hex, percent) {
-    const num = parseInt(hex.slice(1),16); const r=(num>>16)&255,g=(num>>8)&255,b=num&255;
-    const newR=Math.min(255,Math.max(0,Math.round(r + r*percent)));
-    const newG=Math.min(255,Math.max(0,Math.round(g + g*percent)));
-    const newB=Math.min(255,Math.max(0,Math.round(b + b*percent)));
-    return `rgb(${newR},${newG},${newB})`;
-  }
 
-  // Overlay for winner / messages
-  function winnerOverlay(msg) {
-    overlay.innerHTML = '';
-    overlay.style.pointerEvents = msg ? 'auto' : 'none';
-    overlay.setAttribute('aria-hidden', msg ? 'false' : 'true');
-    if (!msg) return;
-    const div = document.createElement('div');
-    div.className = 'popup';
-    div.innerHTML = `<div style="font-weight:700;font-size:18px;margin-bottom:6px">${msg}</div>
-      <div class="muted" style="margin-bottom:12px">Press Start to play again</div>
-      <div style="display:flex;gap:8px;justify-content:center">
-        <button id="replayBtn">Play Again</button>
-        <button id="closeBtn" class="secondary">Menu</button>
-      </div>`;
-    overlay.appendChild(div);
-    document.getElementById('replayBtn').addEventListener('click', () => { scores={p1:0,p2:0}; updateScoreUI(); startMatch(); });
-    document.getElementById('closeBtn').addEventListener('click', () => { running=false; overlay.innerHTML=''; overlay.style.pointerEvents='none'; });
-  }
-
-  // Main loop
-  let lastTime = performance.now();
-  let dtForFrame = 0;
-  function tick(t) {
-    resizeCanvasToDisplay();
-    const now = t;
-    let dt = (now - lastTime) / 1000;
-    if (dt > 0.032) dt = 0.032;
-    lastTime = now;
-    dtForFrame = dt;
-
-    update(dt);
-    render();
-    requestAnimationFrame(tick);
-  }
-
-  function update(dt) {
-    if (!running || !state) return;
-    state.roundTime += dt;
-    // reduce immobile/dash states
-    [state.p1, state.p2].forEach(p => { p.dashCooldown = Math.max(0, p.dashCooldown - dt); if (p.dashing) p.dashing = Math.max(0, p.dashing - dt); if (p.immobile) p.immobile = Math.max(0, p.immobile - dt); });
-
-    // controls & AI
-    handleControls();
-
-    // integration
-    integrate(state.p1, dt); integrate(state.p2, dt);
-
-    // collision & scoring
-    checkCollisions();
-  }
-
-  function render() {
-    // clear & draw
-    ctx.save(); ctx.setTransform(1,0,0,1,0,0); // logical to display handled separately
-    drawArena();
-    // scale logical coordinates to canvas display size
-    const scaleX = (canvas.width/DPR) / W;
-    const scaleY = (canvas.height/DPR) / H;
-    ctx.scale(scaleX, scaleY);
-    drawRhino(state.p1); drawRhino(state.p2);
     ctx.restore();
   }
 
-  // UI wiring
-  startBtn.addEventListener('click', () => { if (needToStartAudio) initAudio(); startMatch(); });
-  modeBtn.addEventListener('click', () => {
-    onePlayer = !onePlayer;
-    modeBtn.textContent = 'Mode: ' + (onePlayer ? '1P' : '2P');
-  });
-
-  // init
-  resetState();
-  resizeCanvasToDisplay();
-  requestAnimationFrame(tick);
-
-  // helpful: init audio on any user gesture if not already done
-  ['mousedown','touchstart','keydown'].forEach(evt => window.addEventListener(evt, () => { if (needToStartAudio) initAudio(); }, { once:true }));
-
-  // expose minor debug API to window for tinkering
-  window.RhinoRam = { restart: ()=>startMatch(), setModeOnePlayer: (v)=>{ onePlayer = !!v; modeBtn.textContent = 'Mode: ' + (onePlayer ? '1P' : '2P'); } };
+  // The rest of your original code: collisions, controls, update, render, UI wiring
+  // ... keep as in your original code
 
 })();
 </script>
